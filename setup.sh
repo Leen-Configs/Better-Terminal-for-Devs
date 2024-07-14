@@ -2,23 +2,50 @@
 
 user="${SUDO_USER:-$USER}"
 
+rm_if_exists() {
+  local dir_or_file=$1
+  local path=$2
+
+  case $dir_or_file in
+    dir)
+      if [[ -d "$path" ]]; then
+        echo "Directory ${path} exists. Removing it..."
+        sudo rm -rf "$path"
+      fi
+      ;;
+    file)
+      if [[ -f "$path" ]]; then
+        echo "File ${path} exists. Removing it..."
+        sudo rm -f "$path"
+      fi
+      ;;
+    *)
+      echo "Invalid option: ${dir_or_file}. Use 'dir' or 'file'."
+      ;;
+  esac
+}
+
 
 install_packages() {
-    packages=("tmux" "alacritty" "git" "neovim" "wget" "zsh")
-    
+    packages=("tmux" "alacritty" "git" "neovim" "wget" "zsh" "btop" "file" "curl" "neofetch")
+
     if command -v apt &> /dev/null; then
         echo "Detected apt package manager. Installing packages..."
-        sudo apt update
+        sudo apt update
         sudo apt install -y "${packages[@]}"
-    elif command -v dnf &> /dev/null; then
-        echo "Detected dnf package manager. Installing packages..."
-        sudo dnf install -y "${packages[@]}"
+        sudo apt-get install -y build-essential procps
     elif command -v yum &> /dev/null; then
         echo "Detected yum package manager. Installing packages..."
         sudo yum install -y "${packages[@]}"
+        sudo yum groupinstall -y 'Development Tools'
+        sudo yum install -y procps-ng
+    elif command -v dnf &> /dev/null; then
+        echo "Detected dnf package manager. Installing packages..."
+        sudo dnf install -y "${packages[@]}"
     elif command -v pacman &> /dev/null; then
         echo "Detected pacman package manager. Installing packages..."
         sudo pacman -Syu --noconfirm "${packages[@]}"
+        sudo pacman -Syu --noconfirm base-devel procps-ng
     elif command -v zypper &> /dev/null; then
         echo "Detected zypper package manager. Installing packages..."
         sudo zypper refresh
@@ -30,7 +57,7 @@ install_packages() {
     else
         echo "No supported package manager found. Please install the packages manually."
         exit 1
-    fi    
+    fi
 }
 
 set_default_terminal_gnome() {
@@ -72,20 +99,14 @@ detect_desktop_environment() {
 
 setup_alacritty() {
   alacritty_outpu_file="/home/$user/.config/alacritty/alacritty.toml"
-
-  if [ -d "/home/$user/.config/alacritty" ]; then
-    echo "Directory '/home/$user/.config/alacritty' exists. Deleting it..."
-    rm -rf "/home/$user/.config/alacritty"
-  fi
+  rm_if_exists "dir" "/home/$user/.config/alacritty"
 
   sleep 1
 
   mkdir -p "/home/$user/.config/alacritty/"
   mkdir -p "/home/$user/.config/alacritty/themes"
-  
   git clone "https://github.com/alacritty/alacritty-theme" "/home/$user/.config/alacritty/themes"
-  rm -rf "/home/$user/.config/alacritty/themes/images"
-
+  sudo rm -rf "/home/$user/.config/alacritty/themes/images"
 
   cat << 'EOF' > "$alacritty_outpu_file"
 import = [ "~/.config/alacritty/themes/themes/ashes_dark.toml" ]
@@ -134,7 +155,7 @@ mouse = { enabled = true }
 [window]
 padding.x = 15
 padding.y = 15
-decorations = "None"
+decorations = "Buttonless"
 opacity = 0.93
 blur = true
 
@@ -167,17 +188,14 @@ style.blinking = "Always"
 
 EOF
 
-  chown -r "$user:$user" "/home/$user/.config/alacritty"
+  chown -R "$user:$user" "/home/$user/.config/alacritty"
 
   echo "Configuration saved to '$alacritty_outpu_file'"
 }
 
 setup_tmux() {
 
-  if [ -d "/home/$user/.tmux/" ]; then
-    echo "Directory '/home/$user/.tmux/' exists. Deleting it..."
-    rm -rf "/home/$user/.tmux/"
-  fi
+  rm_if_exists "dir" "/home/$user/.tmux/"
 
   mkdir -p "/home/$user/.tmux/plugins/"
 
@@ -221,28 +239,85 @@ set -g @catppuccin_status_modules_left ""
 run '~/.tmux/plugins/tpm/tpm'
 EOF
 
-  chown -r "$user:$user" "/home/$user/.tmux/"
-  chown -r "$user:$user" "/home/$user/.tmux.config"
+  chown -R "$user:$user" "/home/$user/.tmux/"
+  chown -R "$user:$user" "/home/$user/.tmux.config"
 
   echo "Configuration saved to '$tmux_output_file'"
 
 }
 
 setup_neovim() {
-  if [ -d "/home/$user/.config/nvim" ]; then
-    echo "Directory '/home/$user/.config/nvim' exists. Deleting it..."
-    rm -rf "/home/$user/.config/nvim"
-  fi
-
+  rm_if_exists "dir" "/home/$user/.config/nvim"
   git clone "https://github.com/Leen-Configs/NeoVim-Config.git" "/home/$user/.config/nvim"
-  chown -r "$user:$user" "/home/$user/.config/nvim"
+  chown -R "$user:$user" "/home/$user/.config/nvim"
 }
 
-# Check for root privileges
-if [[ $EUID -ne 0 ]]; then
-    echo "This script must be run as root. Please use sudo."
-    exit 1
-fi
+setup_neofetch() {
+  echo "neofetch" >> /home/$user/.bashrc
+  echo "neofetch" >> /home/$user/.zshrc
+  mkdir -p "/home/$user/.config/neofetch"
+  if [[ -f "/home/$user/.config/neofetch/config.conf" ]]; then
+    sudo mv "/home/$user/.config/neofetch/config.conf" "/home/$user/.config/neofetch/config.conf.bak"
+  fi
+  rm_if_exists "/home/$user/.config/neofetch/config.conf"
+  rm_if_exists "file" "/home/$user/.config/neofetch/ascii.txt"
+
+  curl "https://raw.githubusercontent.com/Leen-Configs/Better-Terminal-for-Devs/master/pkg/neofetch/config.conf" > /home/$user/.config/neofetch/config.conf
+  curl "https://raw.githubusercontent.com/Leen-Configs/Better-Terminal-for-Devs/master/pkg/neofetch/ascii.txt" > /home/$user/.config/neofetch/ascii.txt
+}
+
+setup_terminal_tools() {
+  echo "Installing Oh My Zsh..."
+
+  mkdir -p ./pkg/ohmyzsh/
+  curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh -o ./pkg/ohmyzsh/install.sh
+  sed -i.bak 's|exec zsh -l|#exec zsh -l|' ./pkg/ohmyzsh/install.sh
+  sh ./pkg/ohmyzsh/install.sh
+  rm_if_exists "dir" "./pkg/ohmyzsh"
+
+  git clone "https://github.com/zsh-users/zsh-syntax-highlighting.git" "/home/$user/.config/zsh-syntax-highlighting"
+  echo "source /home/$user/.config/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" >> /home/$user/.zshrc
+  chown -R "$user:$user" "/home/$user/.config/zsh-syntax-highlighting"
+
+  echo "setup neofetch..."
+  setup_neofetch
+
+  echo "Installing Homebrew..."
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  test -d ~/.linuxbrew && eval "$(~/.linuxbrew/bin/brew shellenv)"
+  test -d /home/linuxbrew/.linuxbrew && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+  echo "eval \"\$($(brew --prefix)/bin/brew shellenv)\"" >> /home/$user/.bashrc
+  echo "eval \"\$($(brew --prefix)/bin/brew shellenv)\"" >> /home/$user/.zshrc
+  source /home/$user/.bashrc
+  brew update
+
+  read -p "do you want to install Pyenv? (yes/no): " user_input
+  if [[ -z "$user_input" || "$user_input" =~ ^([yy]|[yy][ee][ss]?)$ ]]; then
+    echo "Installing PyEnv..."
+    brew install pyenv
+
+    echo 'export PYENV_ROOT="$HOME/.pyenv"' >> /home/$user/.bashrc
+    echo 'command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"' >> /home/$user/.bashrc
+    echo 'eval "$(pyenv init -)"' >> /home/$user/.bashrc
+
+    echo 'export PYENV_ROOT="$HOME/.pyenv"' >> /home/$user/.profile
+    echo 'command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"' >> /home/$user/.profile
+    echo 'eval "$(pyenv init -)"' >> /home/$user/.profile
+
+    echo 'export PYENV_ROOT="$HOME/.pyenv"' >> /home/$user/.zshrc
+    echo '[[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"' >> /home/$user/.zshrc
+    echo 'eval "$(pyenv init -)"' >> /home/$user/.zshrc
+  fi
+
+  echo "Installing FZF..."
+  brew install fzf
+  echo 'eval "$(fzf --bash)"' >> /home/$user/.bashrc
+  echo 'source <(fzf --zsh)' >> /home/$user/.zshrc
+
+  echo "Installing GCC..."
+  brew install gcc
+
+}
 
 
 if [ ! -d "/home/$user/.config" ]; then
@@ -254,9 +329,7 @@ fi
 install_packages
 setup_alacritty
 setup_tmux
-
 desktop_env=$(detect_desktop_environment | tr '[:upper:]' '[:lower:]')
-
 case "$desktop_env" in
     gnome)
         set_default_terminal_gnome
@@ -271,11 +344,8 @@ case "$desktop_env" in
         set_default_terminal_update_alternatives
         ;;
 esac
-
 echo "Alacritty has been set as the default terminal for $desktop_env."
-
-
-
+setup_terminal_tools
 
 echo "Installation completed."
 
